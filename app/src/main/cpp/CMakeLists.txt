@@ -1,38 +1,30 @@
 cmake_minimum_required(VERSION 3.22.1)
+
+set(NDK_PATH $ENV{ANDROID_NDK})
+set(ANDROID_PLATFORM 34)
+set(ANDROID_ABI arm64-v8a)
+
+set(CMAKE_TOOLCHAIN_FILE: "/Users/tranluong/Library/Android/sdk/ndk/27.0.12077973/build/cmake")
 project("ffmpeg_app")
 
-# file header
-include_directories(${CMAKE_SOURCE_DIR}/include/arm64-v8a)
+set(CMAKE_CXX_STANDARD 17)
+file(REAL_PATH . PROJECT_PATH)
 
-add_library(native-lib SHARED native-lib.cpp)
+set(EXTERNAL_INCLUDE ${PROJECT_PATH}/mmfw_include)
+set(EXTERNAL_LIBRARY ${PROJECT_PATH}/mmfw_library)
 
-# lib FFmpeg
-add_library(avcodec SHARED IMPORTED)
-set_target_properties(avcodec PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libavcodec.so)
+add_library(${CMAKE_PROJECT_NAME} SHARED native-lib.cpp)
 
-add_library(avformat SHARED IMPORTED)
-set_target_properties(avformat PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libavformat.so)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    ${EXTERNAL_INCLUDE}/include/arm64-v8a
+)
 
-add_library(avutil SHARED IMPORTED)
-set_target_properties(avutil PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libavutil.so)
-
-add_library(swscale SHARED IMPORTED)
-set_target_properties(swscale PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libswscale.so)
-
-add_library(swresample SHARED IMPORTED)
-set_target_properties(swresample PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libswresample.so)
-
-# Link lib to native-lib
-target_link_libraries(native-lib
-        avcodec
-        avformat
-        avutil
-        swscale
-        swresample
+target_link_libraries(${CMAKE_PROJECT_NAME}
+        android
         log
+        ${EXTERNAL_LIBRARY}/sharedLibraries/arm64-v8a/libsecffmpeg.so
+)
+
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${PROJECT_PATH}/../../jniLibs/${ANDROID_ABI}
 )

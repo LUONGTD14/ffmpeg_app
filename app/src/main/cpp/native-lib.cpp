@@ -1,35 +1,69 @@
 #include <jni.h>
-#include <string>
 #include <android/log.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <thread>
+#include <setjmp.h>
+#include <stdio.h>
 
-// Bạn có thể khai báo ffmpeg_main ở đây nếu bạ n build toàn bộ ffmpeg.c
-extern "C" {
-int ffmpeg_main(int argc, char** argv);
-}
-
-#define LOG_TAG "FFMPEG"
+#define LOG_TAG "FFMPEG_APP"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
+extern "C" {
+#include "cmdutils.h"
+void log_callback_android(void* ptr, int level, const char* fmt, va_list vl);
+int ffmpeg_main(int argc, char **argv);
+}
+
 extern "C"
-JNIEXPORT jint JNICALL
-Java_com_luongtd14_ffmpeg_1app_MainActivity_runFFmpegCmd(JNIEnv *env, jobject thiz, jobjectArray cmds) {
-    int argc = env->GetArrayLength(cmds);
-    char **argv = new char *[argc];
+JNIEXPORT jstring JNICALL
+Java_com_luongtd14_ffmpeg_1app_MainActivity_runFFmpegCmd(JNIEnv *env, jobject /* this */,
+                                                         jstring cmd_) {
+    clear_output_buffer();
+    static int pipe_fd[2];
+    pipe(pipe_fd);
+    dup2(pipe_fd[1], STDERR_FILENO); // redirect stderr to pipe
 
-    for (int i = 0; i < argc; ++i) {
-        jstring jstr = (jstring) env->GetObjectArrayElement(cmds, i);
-        const char *nativeString = env->GetStringUTFChars(jstr, 0);
-        argv[i] = strdup(nativeString);
-        env->ReleaseStringUTFChars(jstr, nativeString);
+    std::thread([]() {
+        char buffer[1024];
+        while (true) {
+            ssize_t len = read(pipe_fd[0], buffer, sizeof(buffer) - 1);
+            if (len > 0) {
+                buffer[len] = '\0';
+                __android_log_print(ANDROID_LOG_ERROR, "ffmpeg_stderr", "%s", buffer);
+            }
+        }
+    }).detach();
+    av_log_set_callback(log_callback_android);
+    av_log_set_level(AV_LOG_VERBOSE);
+    av_log(NULL, AV_LOG_INFO, "Log callback setup OK!\n");
+
+    if (setjmp(ffmpeg_jmp_buf)) {
+        __android_log_print(ANDROID_LOG_ERROR, "ffmpeg_app_ltd", "FFmpeg exited with error\n");
+        return (jstring) "-1";
     }
 
-    LOGI("Running ffmpeg_main with %d args", argc);
-    int result = ffmpeg_main(argc, argv);
-
-    for (int i = 0; i < argc; ++i) {
-        free(argv[i]);
+    const char* cmd_cstr = env->GetStringUTFChars(cmd_, NULL);
+    if (!cmd_cstr) {
+        return env->NewStringUTF("-1"); // error
     }
-    delete[] argv;
 
-    return result;
+    // Duplicate string so we can tokenize safely
+    char *cmd_copy = strdup(cmd_cstr);
+    env->ReleaseStringUTFChars(cmd_, cmd_cstr);
+
+    // Tokenize command string by space to build argv array
+    std::vector<char*> argv_vec;
+    char *token = strtok(cmd_copy, " ");
+    while (token != NULL) {
+        argv_vec.push_back(token);
+        token = strtok(NULL, " ");
+    }
+    int argc = (int)argv_vec.size();
+
+    // argv array for ffmpeg_main
+    char **argv = argv_vec.data();
+    int ret = ffmpeg_main(argc, argv);
+    printf("ffmpeg app ltd ret = %d", ret);
+    return env->NewStringUTF(get_output_buffer());
 }
