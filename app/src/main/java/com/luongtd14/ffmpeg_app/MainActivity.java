@@ -15,6 +15,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -22,7 +23,7 @@ import androidx.core.content.ContextCompat;
 import com.luongtd14.ffmpeg_app.databinding.ActivityMainBinding;
 
 public class MainActivity extends AppCompatActivity {
-    String cmd = "ffmpeg -i sdcard/input.webm -c copy sdcard/output.mp4";
+    String[] cmd = {"ffmpeg", "-encoders"};
     private static final int REQUEST_CODE_PERMISSIONS = 123;
     private static final int REQUEST_CODE_MANAGE_ALL_FILES_ACCESS_PERMISSION = 124;
 
@@ -34,7 +35,8 @@ public class MainActivity extends AppCompatActivity {
 
     // Used to load the 'ffmpeg_app' library on application startup.
     static {
-        System.loadLibrary("secffmpeg");
+//        System.loadLibrary("secffmpeg");
+        System.loadLibrary("c++_shared");
         System.loadLibrary("ffmpeg_app");
     }
 
@@ -66,6 +68,7 @@ public class MainActivity extends AppCompatActivity {
             Log.e("luongtd14", " " + runFFmpegCmd(cmd));
         });
     }
+
     private void requestLegacyStoragePermissions() {
         // Kiểm tra quyền READ/WRITE đã cấp chưa
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
@@ -114,5 +117,5 @@ public class MainActivity extends AppCompatActivity {
      * A native method that is implemented by the 'ffmpeg_app' native library,
      * which is packaged with this application.
      */
-    public native String runFFmpegCmd(String cmd);
+    public native String runFFmpegCmd(String[] cmds);
 }

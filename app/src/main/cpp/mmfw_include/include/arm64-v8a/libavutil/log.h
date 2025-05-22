@@ -304,8 +304,14 @@ void av_log_set_level(int level);
  *
  * @param callback A logging function with a compatible signature.
  */
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 void av_log_set_callback(void (*callback)(void*, int, const char*, va_list));
-
+#ifdef __cplusplus
+}
+#endif
 /**
  * Default logging callback
  *

@@ -5,65 +5,60 @@
 #include <thread>
 #include <setjmp.h>
 #include <stdio.h>
+#include "ffmpeg.h"
 
-#define LOG_TAG "FFMPEG_APP"
+#define LOG_TAG "FFMPEG_LOG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-extern "C" {
-#include "cmdutils.h"
-void log_callback_android(void* ptr, int level, const char* fmt, va_list vl);
-int ffmpeg_main(int argc, char **argv);
+// Định nghĩa hàm redirect output
+void redirectOutputToLogcat() {
+    int pipefd[2];
+    pipe(pipefd);
+
+    dup2(pipefd[1], STDOUT_FILENO); // redirect stdout
+    dup2(pipefd[1], STDERR_FILENO); // redirect stderr
+    close(pipefd[1]);
+
+    std::thread([=]() {
+        char buffer[1024];
+        ssize_t count;
+        while ((count = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[count] = '\0';
+            LOGI("%s", buffer);
+        }
+    }).detach();
+}
+
+extern "C" void custom_ffmpeg_log_callback(void* ptr, int level, const char* fmt, va_list vl) {
+    char line[1024];
+    vsnprintf(line, sizeof(line), fmt, vl);
+    __android_log_print(ANDROID_LOG_INFO, "FFMPEG_LOG", "%s", line);
 }
 
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_luongtd14_ffmpeg_1app_MainActivity_runFFmpegCmd(JNIEnv *env, jobject /* this */,
-                                                         jstring cmd_) {
-    clear_output_buffer();
-    static int pipe_fd[2];
-    pipe(pipe_fd);
-    dup2(pipe_fd[1], STDERR_FILENO); // redirect stderr to pipe
+                                                         jobjectArray cmds) {
+    redirectOutputToLogcat();
+    av_log_set_callback(custom_ffmpeg_log_callback);
 
-    std::thread([]() {
-        char buffer[1024];
-        while (true) {
-            ssize_t len = read(pipe_fd[0], buffer, sizeof(buffer) - 1);
-            if (len > 0) {
-                buffer[len] = '\0';
-                __android_log_print(ANDROID_LOG_ERROR, "ffmpeg_stderr", "%s", buffer);
-            }
-        }
-    }).detach();
-    av_log_set_callback(log_callback_android);
-    av_log_set_level(AV_LOG_VERBOSE);
-    av_log(NULL, AV_LOG_INFO, "Log callback setup OK!\n");
+    jsize argc = env->GetArrayLength(cmds);
+    char **argv = new char *[argc+1];
 
-    if (setjmp(ffmpeg_jmp_buf)) {
-        __android_log_print(ANDROID_LOG_ERROR, "ffmpeg_app_ltd", "FFmpeg exited with error\n");
-        return (jstring) "-1";
+    for (jsize i = 0; i < argc; ++i) {
+        jstring jstr = (jstring) env->GetObjectArrayElement(cmds, i);
+        const char *cstr = env->GetStringUTFChars(jstr, nullptr);
+        argv[i] = new char [strlen(cstr)+1];
+        strcpy(argv[i], cstr);
+        env->ReleaseStringUTFChars(jstr, cstr);
+        env->DeleteLocalRef(jstr);
     }
+    argv[argc]= nullptr;
 
-    const char* cmd_cstr = env->GetStringUTFChars(cmd_, NULL);
-    if (!cmd_cstr) {
-        return env->NewStringUTF("-1"); // error
-    }
-
-    // Duplicate string so we can tokenize safely
-    char *cmd_copy = strdup(cmd_cstr);
-    env->ReleaseStringUTFChars(cmd_, cmd_cstr);
-
-    // Tokenize command string by space to build argv array
-    std::vector<char*> argv_vec;
-    char *token = strtok(cmd_copy, " ");
-    while (token != NULL) {
-        argv_vec.push_back(token);
-        token = strtok(NULL, " ");
-    }
-    int argc = (int)argv_vec.size();
-
-    // argv array for ffmpeg_main
-    char **argv = argv_vec.data();
     int ret = ffmpeg_main(argc, argv);
-    printf("ffmpeg app ltd ret = %d", ret);
-    return env->NewStringUTF(get_output_buffer());
+    for(int i = 0; i < argc; i++){
+        delete[] argv[i];
+    }
+    delete[] argv;
+    return env->NewStringUTF(reinterpret_cast<const char *>(ret));
 }
